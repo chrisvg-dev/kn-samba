@@ -26,7 +26,7 @@ public class SmbRemoteAccess {
 
     /**
      * Como la librería de SMBJ necesita de todas estas clases para abrir una conexión con Samba se manejan como variables globales
-     * ya que de no utilizarse así en muchas ocasiones pueden quedar abiertos alguns flujos de información.
+     * ya que de no utilizarse así en muchas ocasiones pueden quedar abiertos alguns flujos de información, incluso llegar a repetirse en muchas ocasiones.
      * Con estas variables globales se agregan 2 métodos nuevos: openConnection y closeConnection
      */
     private SMBClient client; // Se utiliza para abrir la conexión al servidor de samba
@@ -50,7 +50,7 @@ public class SmbRemoteAccess {
     }
     /**  */
 
-    private File obtainFileForReading(String filePath) {
+    private File getFileForReading(String filePath) {
         return this.diskShare.openFile(filePath,
                 EnumSet.of(AccessMask.FILE_READ_DATA),
                 null,
@@ -59,7 +59,7 @@ public class SmbRemoteAccess {
                 null);
     }
 
-    private File obtainFileForWriting(String filePath) {
+    private File getFileForWriting(String filePath) {
         return this.diskShare.openFile(filePath,
                 EnumSet.of(AccessMask.FILE_WRITE_DATA),
                 EnumSet.of(FileAttributes.FILE_ATTRIBUTE_NORMAL),
@@ -71,7 +71,7 @@ public class SmbRemoteAccess {
         try  {
             SmbProperties config = getParametersFromURL(resource);
             this.openConnection(config);
-            File file = obtainFileForReading(config.getFilePath());
+            File file = getFileForReading(config.getFilePath());
 
             BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(file.getInputStream()));
 
@@ -99,7 +99,7 @@ public class SmbRemoteAccess {
             SmbProperties config = getParametersFromURL(resource);
             this.openConnection(config);
 
-            File file = obtainFileForReading(config.getFilePath());
+            File file = getFileForReading(config.getFilePath());
 
             byte[] buffer = new byte[BUFFER_SIZE];
             BufferedInputStream bi = new BufferedInputStream(file.getInputStream());
@@ -125,7 +125,7 @@ public class SmbRemoteAccess {
         try {
             SmbProperties config = getParametersFromURL(resource);
             this.openConnection(config);
-            File file = obtainFileForWriting(config.getFilePath());
+            File file = getFileForWriting(config.getFilePath());
 
             OutputStream out = file.getOutputStream();
             BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(out, Charset.forName(encoding)));
@@ -150,7 +150,7 @@ public class SmbRemoteAccess {
         try {
             SmbProperties config = getParametersFromURL(resource);
             this.openConnection(config);
-            File file = obtainFileForWriting(config.getFilePath());
+            File file = getFileForWriting(config.getFilePath());
 
             OutputStream os = file.getOutputStream();
             os.write(lines);
@@ -190,15 +190,26 @@ public class SmbRemoteAccess {
     public boolean move(String resource, String sourcePath, String destinationPath) {
         try {
             SmbProperties originConfig = getParametersFromURL(sourcePath);
-            SmbProperties edestinationConfig = getParametersFromURL(sourcePath);
-
             this.openConnection(originConfig);
-            File origin = obtainFileForReading(originConfig.getFilePath());
-            File destination = obtainFileForWriting(originConfig.getFilePath());
+
+            String oldFilePath = originConfig.getPath() + "/" + sourcePath;
+            String newFilePath = originConfig.getPath() + "/" + destinationPath;
+
+            File origin = getFileForReading(originConfig.getPath() + "/" + sourcePath);
+            File destination = getFileForWriting( originConfig.getPath() + "/" + destinationPath );
+
             copyFile(origin, destination);
+
+            origin.close();
+            destination.close();
+
+            boolean moved = this.diskShare.fileExists(newFilePath);
+
+            if (moved) this.diskShare.rm(oldFilePath);
+
             this.closeConnection();
 
-            return true;
+            return moved;
         } catch (Exception e) {
             log.error(e.getMessage());
         }
@@ -221,8 +232,7 @@ public class SmbRemoteAccess {
         }
         return false;
     }
-    private static void copyFile(File source, File destination)
-            throws IOException {
+    private static void copyFile(File source, File destination) throws IOException {
         byte[] buffer = new byte[BUFFER_SIZE];
         try (InputStream in = source.getInputStream()) {
             try (OutputStream out = destination.getOutputStream()) {
@@ -237,7 +247,7 @@ public class SmbRemoteAccess {
     private static SmbProperties getParametersFromURL(String resource) throws IOException {
         String path = "src/main/resources/application.properties";
         try(InputStream inputStream = new FileInputStream(path)){
-                        Properties properties = new Properties();
+            Properties properties = new Properties();
             properties.load(inputStream);
 
             SmbProperties config = new SmbProperties();
