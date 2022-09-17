@@ -189,7 +189,7 @@ public class SmbRemoteAccess {
 
     public boolean move(String resource, String sourcePath, String destinationPath) {
         try {
-            SmbProperties originConfig = getParametersFromURL(sourcePath);
+            SmbProperties originConfig = getParametersFromURL(resource);
             this.openConnection(originConfig);
 
             String oldFilePath = originConfig.getPath() + "/" + sourcePath;
